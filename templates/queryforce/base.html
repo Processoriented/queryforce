@@ -1,0 +1,30 @@
+{% load staticfiles %}
+<html>
+    <head>
+        <title>QueryForce</title>
+        <link rel="stylesheet" href="{% static 'queryforce/css/bootstrap.min.css' %}">
+        <link rel="stylesheet" href="{% static 'queryforce/css/bootstrap-theme.min.css' %}">
+        <link rel="stylesheet" href="{% static 'queryforce/css/qf.css' %}">
+        <link rel="stylesheet" href="{% static 'queryforce/css/datatables.min.css' %}">
+        <script src="{% static 'queryforce/js/jquery-3.1.1.min.js' %}"></script>
+        <script src="{% static 'queryforce/js/bootstrap.min.js' %}"></script>
+        <script src="{% static 'queryforce/js/datatables.min.js' %}"></script>
+    </head>
+    <body>
+        <div class="page-header">
+                <a href="{% url 'queryforce:new_query' %}" class="top-menu">
+                    <span class="glyphicon glyphicon-plus"></span>
+                </a>
+            <h1><a href="/queryforce">QueryForce</a></h1>
+        </div>
+        <div class="content container">
+            <div class="row">
+            {% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
+                <div class="col-md-8">
+                {% block content %}
+                {% endblock %}
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

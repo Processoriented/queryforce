@@ -1,0 +1,12 @@
+{% extends 'queryforce/base.html' %}
+
+{% block content %}
+    <h1>
+        {{ query.name }}
+        <a class="btn btn-default" href="{% url 'queryforce:query_edit' pk=query.pk %}">
+            <span class="glyphicon glyphicon-pencil"></span>
+        </a>
+    </h1>
+    <hl/>
+    <p>{{ query.soql }}</p>
+{% endblock %}
