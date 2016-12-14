@@ -13,19 +13,7 @@ urlpatterns = [
         views.DetailView.as_view(),
         name='detail'),
     url(
-        r'^(?P<pk>[0-9]+)/results/$',
-        views.ResultsView.as_view(),
-        name='results'),
-    url(
-        r'^new/query/$',
-        views.new_query,
-        name="new_query"),
-    url(
-        r'^query/(?P<pk>[0-9]+)/edit/$',
-        views.query_edit,
-        name='query_edit'),
-    url(
-        r'^(?P<query_id>[0-9]+)/define/$',
-        views.define,
-        name='define'),
+        r'^(?P<pk>[0-9]+)/raw/$',
+        views.raw_results,
+        name='raw_results'),
 ]

@@ -1,5 +1,5 @@
 from django import forms
-from .models import Query
+from .models import Query, DisplayColumn
 
 
 class QueryForm(forms.ModelForm):

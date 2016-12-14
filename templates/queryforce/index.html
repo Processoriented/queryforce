@@ -1,13 +1,13 @@
 {% extends 'queryforce/base.html' %}
 
 {% block content %}
-    {% if latest_query_list %}
+    {% if report_list %}
         <ul>
-        {% for query in latest_query_list %}
-            <li><a href="{% url 'queryforce:detail' query.id %}">{{ query.name }}</a></li>
+        {% for report in report_list %}
+            <li><a href="{% url 'queryforce:detail' report.id %}">{{ report.name }}</a></li>
         {% endfor %}
         </ul>
     {% else %}
-        <p>No queries are available.</p>
+        <p>No reports are available.</p>
     {% endif %}
 {% endblock %}
