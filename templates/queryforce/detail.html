@@ -4,6 +4,15 @@
     <div>
         <h1>{{ report.name }}</h1>
     </div>
+    {% if form %}
+    <div>
+        <form action="" method="POST">
+            {% csrf_token %}
+            {{ form }}
+            <input type="submit" value="Submit" />
+        </form>
+    </div>
+    {% endif %}
     <div id="tbldv" data="{% url 'queryforce:raw_results' report.id %}">
         <table id="result_table" class="table table-striped table-bordered" cellspacing="0" width="100%">
             <thead>

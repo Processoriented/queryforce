@@ -7,6 +7,7 @@ from django.views import generic
 from django.forms import inlineformset_factory
 from .models import Query, ForceAPI
 from .models import Report
+from .forms import ParameterForm
 # from .forms import QueryForm, DisplayColumnForm
 
 
@@ -20,6 +21,18 @@ class IndexView(generic.ListView):
 class DetailView(generic.DetailView):
     model = Report
     template_name = 'queryforce/detail.html'
+
+    def get_context_data(self, **kwargs):
+        context = super(DetailView, self).get_context_data(**kwargs)
+        report = kwargs['object']
+        # Use this code after testing
+        # if report.params_required():
+        #     form = ParameterForm()
+        # else:
+        #     form = None
+
+        context['form'] = None
+        return context
 
 def raw_results(request, pk):
     report = get_object_or_404(Report, pk=pk)
