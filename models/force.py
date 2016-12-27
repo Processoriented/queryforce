@@ -125,25 +125,40 @@ class Query(models.Model):
         txt = '+'.join(qs.split(' '))
         return 'query?q=' + txt
 
-    def make_result(self, qs=None):        
+    def make_qs(self, qs=None, param_string=None):        
+        if qs is None:
+            qs = self.soql
+        if param_string is not None:
+            if 'WHERE' in qs:
+                temp_qs = qs.split('WHERE')
+                temp_wc = temp_qs.pop(-1)
+                temp_wc += ' AND ' + param_string
+                temp_qs.append(temp_wc)
+                qs = 'WHERE'.join(temp_qs)
+            else:
+                qs += ' WHERE ' + param_string
+        if self.api is None:
+            return qs
+        else:
+            return self.apiqs(qs)
+
+    def make_result(self, qs=None, param_string=None):        
         if "?" in self.soql:
             if qs is None:
                 return None
         rslt = None
+        qs = self.make_qs(qs, param_string)
         if self.api is None:
             # handle archive query
             if self.conn is None:
                 self.scarchive_conn()
             cur = self.conn.cursor()
-            if qs is None:
-                qs = self.soql
             cur.execute(qs)
             recs = cur.fetchall()
             jrecs = json.dumps(recs, default=data_type_handler)
             rslt = json.loads(jrecs)
         else:
             # handle api call
-            qs = self.apiqs(qs)
             req = self.api.get_data(qs)
             if type(req) is dict:
                 if 'records' in req.keys():
@@ -153,6 +168,8 @@ class Query(models.Model):
                         rslt.append(self.sf_recs(nqs))
             else:
                 rslt = req
+                rslt.append({'qs': qs})
+                rslt.append({'oq': self.soql})
         return rslt
 
     def json_result(self):
@@ -274,15 +291,15 @@ class Report(models.Model):
     def __str__(self):
         return self.name
 
-    def result_union(self):
+    def result_union(self, param_string=None):
         rslt = []
         for rq in self.reportquery_set.all():
-            rqrslt = rq.query.make_result()
+            rqrslt = rq.query.make_result(None, param_string)
             rslt.extend(rqrslt)
         return rslt
 
-    def json_result(self):
-        jr = {'data': self.result_union()}
+    def json_result(self, param_string=None):
+        jr = {'data': self.result_union(param_string)}
         return json.dumps(jr)
 
     def display_rules(self):
@@ -298,6 +315,13 @@ class Report(models.Model):
     def params_required(self):
         return self.parameter_count > 0
 
+    def report_params(self):
+        params = []
+        for rq in self.reportquery_set.all():
+            if rq.params_count() > 0:
+                params.extend(rq.rq_params())
+        return params
+
 
 class ReportQuery(models.Model):
     report = models.ForeignKey(
@@ -312,3 +336,7 @@ class ReportQuery(models.Model):
 
     def params_count(self):
         return self.query.parameter_set.count()
+
+    def rq_params(self):
+        return self.query.parameter_set.all()
+

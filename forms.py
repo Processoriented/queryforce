@@ -23,13 +23,34 @@ class ParameterForm(forms.Form):
         ('ends with', 'ends with'),
         ('contains', 'contains'),
     )
-    operator = forms.ChoiceField(
-        choices=OPERATOR_CHOICES,
-        label="")
-    value = forms.CharField(
-        max_length=255,
-        label="")
+
+    def __init__(self, *args, **kwargs):
+        param_name = kwargs.pop('parameter', None)
+        self.parameter = param_name
+        super(ParameterForm, self).__init__(*args, **kwargs)
+
+        self.fields['parameter'] = forms.CharField(
+            max_length=80,
+            initial=self.parameter,
+            label="",
+            widget=forms.TextInput(attrs={
+                'value': self.parameter,
+                'readonly': None,
+                'class': 'form-control'
+                }))
+        self.fields['operator'] = forms.ChoiceField(
+            choices=self.OPERATOR_CHOICES,
+            label="",
+            widget=forms.Select(attrs={
+                'class': 'form-control'
+                }))
+        self.fields['value'] = forms.CharField(
+            max_length=255,
+            label="",
+            widget=forms.TextInput(attrs={
+                'class': 'form-control'
+                }))
+        # self.fields['operator'].label = param_name
 
     def apply_filter(self):
         pass
-

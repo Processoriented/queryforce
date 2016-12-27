@@ -16,4 +16,8 @@ urlpatterns = [
         r'^(?P<pk>[0-9]+)/raw/$',
         views.raw_results,
         name='raw_results'),
+    url(
+        r'^(?P<pk>[0-9]+)/param/$',
+        views.param_results,
+        name='param_results'),
 ]

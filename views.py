@@ -4,10 +4,11 @@ from django.http import HttpResponseRedirect, HttpResponse
 from django.core import serializers
 from django.urls import reverse
 from django.views import generic
-from django.forms import inlineformset_factory
+from django.forms.formsets import formset_factory
 from .models import Query, ForceAPI
 from .models import Report
 from .forms import ParameterForm
+import json
 # from .forms import QueryForm, DisplayColumnForm
 
 
@@ -25,18 +26,28 @@ class DetailView(generic.DetailView):
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
         report = kwargs['object']
-        # Use this code after testing
-        # if report.params_required():
-        #     form = ParameterForm()
-        # else:
-        #     form = None
-
-        context['form'] = None
+        # context['kwview'] = kwargs['ris']
+        params = report.report_params()
+        if len(params) > 0:
+            ParameterFormSet = formset_factory(ParameterForm, extra=0)
+            param_data = [{'parameter': p.field_name} for p in params]
+            param_form_set = ParameterFormSet(initial=param_data)
+            context['formset'] = param_form_set
+        else:
+            context['formset'] = None
         return context
 
 def raw_results(request, pk):
     report = get_object_or_404(Report, pk=pk)
     data = report.json_result()
+    return HttpResponse(data, content_type='application/json')
+
+def param_results(request, pk):
+    report = get_object_or_404(Report, pk=pk)
+    param_string = None
+    if 'ps' in request.GET:
+        param_string = request.GET['ps']
+    data = report.json_result(param_string)
     return HttpResponse(data, content_type='application/json')
 
 # def new_query(request):
