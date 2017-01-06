@@ -1,0 +1,19 @@
+{
+    "Libraries": {
+        "jquery": {
+            "systemFileName": "jquery.js",
+            "originalFileName": "jquery-3.1.1.min.js",
+            "version": "3.1.1"
+        },
+        "bootstrap": {
+            "systemFileName": "bootstrap.js",
+            "originalFileName": "bootstrap.min.js",
+            "version": "3.3.7"
+        },
+        "datatables.net": {
+            "systemFileName": "datatables.js",
+            "originalFileName": "datatables.min.js",
+            "version": "1.10.13"
+        }
+    }
+}

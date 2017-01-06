@@ -25,17 +25,23 @@ class ParameterForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
-        param_name = kwargs.pop('parameter', None)
+        query_id = kwargs['initial'].pop('query_pk', 0)
+        self.query_pk = query_id
+        param_name = kwargs['initial'].pop('parameter', None)
         self.parameter = param_name
         super(ParameterForm, self).__init__(*args, **kwargs)
 
+        self.fields['query'] = forms.IntegerField(
+            label="",
+            widget=forms.HiddenInput(attrs={
+                'value': query_id}))
         self.fields['parameter'] = forms.CharField(
             max_length=80,
             initial=self.parameter,
             label="",
             widget=forms.TextInput(attrs={
                 'value': self.parameter,
-                'readonly': None,
+                'readonly': True,
                 'class': 'form-control'
                 }))
         self.fields['operator'] = forms.ChoiceField(

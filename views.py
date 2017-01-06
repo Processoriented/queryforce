@@ -29,12 +29,17 @@ class DetailView(generic.DetailView):
         # context['kwview'] = kwargs['ris']
         params = report.report_params()
         if len(params) > 0:
+            context['jsreq'] = 'queryforce/js/app/rptParams.js'
             ParameterFormSet = formset_factory(ParameterForm, extra=0)
-            param_data = [{'parameter': p.field_name} for p in params]
+            param_data = [{
+                'parameter': str(p),
+                'query_pk': p.query.pk
+                } for p in params]
             param_form_set = ParameterFormSet(initial=param_data)
             context['formset'] = param_form_set
         else:
             context['formset'] = None
+            context['jsreq'] = 'queryforce/js/app/resultdt.js'
         return context
 
 def raw_results(request, pk):
@@ -44,11 +49,17 @@ def raw_results(request, pk):
 
 def param_results(request, pk):
     report = get_object_or_404(Report, pk=pk)
-    param_string = None
-    if 'ps' in request.GET:
-        param_string = request.GET['ps']
-    data = report.json_result(param_string)
-    return HttpResponse(data, content_type='application/json')
+    params = {}
+    for key in request.POST.keys():
+        if key[:3] == 'ps[':
+            kp = key[3:-1].split('][')
+            param = {} if kp[0] not in params else params[kp[0]]
+            param[kp[1]] = request.POST[key]
+            params[kp[0]] = param
+    data = report.json_result(params)
+    return HttpResponse(
+        data,
+        content_type='application/json')
 
 # def new_query(request):
 #     if request.method == "POST":

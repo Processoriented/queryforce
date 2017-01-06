@@ -1,12 +1,11 @@
 from django.db import models
 from .auth import ForceAPI
-from django.core.files.base import ContentFile
 from django.conf import settings
-import os.path as path
 import json
 import psycopg2
 from psycopg2 import extras
 from decimal import Decimal
+from .parser import QF_Statement
 
 
 def data_type_handler(obj):
@@ -16,47 +15,6 @@ def data_type_handler(obj):
         return int(obj)
     else:
         return obj
-
-
-# class Source(models.Model):
-#     name = models.CharField(
-#         max_length=80)
-
-#     def __str__(self):
-#         return self.name()
-
-
-# class Api_Source(Source):
-#     api = models.ForeignKey(
-#         ForceAPI,
-#         on_delete=models.CASCADE)
-
-
-# class Postgre_Source(Source):
-#     dbname = models.CharField(
-#         max_length=60)
-#     host = models.CharField(
-#         max_length=255)
-#     user_id = models.CharField(
-#         max_length=60)
-#     password = models.CharField(
-#         max_length=60)
-#     conn = None
-
-#     def make_dsn(self):
-#         rtn = []
-#         rtn.append("dbname='%s' " % self.dbname)
-#         rtn.append("user='%s' " % self.user_id)
-#         rtn.append("host='%s' " % self.host)
-#         rtn.append("password='%s'" % self.password)
-#         return " ".join(rtn)
-
-#     def connect(self):
-#         dsn = self.make_dsn()
-#         self.conn = psycopg2.connect(
-#             dsn,
-#             cursor_factory=psycopg2.extras.RealDictCursor)
-#         return
 
 
 class Query(models.Model):
@@ -74,6 +32,8 @@ class Query(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True)
+    parse_on_save = models.BooleanField(
+        default=True)
     conn = None
 
     def __str__(self):
@@ -81,7 +41,10 @@ class Query(models.Model):
 
     def save(self, *args, **kwargs):
         super(Query, self).save(*args, **kwargs)
-        self.auto_cols()
+        if self.parse_on_save:
+            self.auto_cols()
+        else:
+            self.parse_on_save = True
 
     def scarchive_conn(self):
         dbname = "hc_ms_scarchival"
@@ -93,11 +56,32 @@ class Query(models.Model):
             cursor_factory=psycopg2.extras.RealDictCursor)
         self.conn = connection
 
+    def parsed_stmt(self, sql=None):
+        sql = sql if sql is not None else self.soql
+        return QF_Statement(sql)
+
+    def auto_params(self, pcs=None):
+        if pcs is None:
+            stmt = QF_Statement(self.soql)
+            pcs = stmt.ph_comps()
+        for comp in pcs:
+            pname = comp.comp_name
+            skipit = self.parameter_set.filter(
+                field_name=pname,query=self).exists()
+            if not skipit:
+                param = Parameter(
+                    query=self,
+                    field_name=pname,
+                    token_text=str(comp))
+                param.save()
+
     def auto_cols(self):
-        acq = self.soql.split('limit')
-        if len(acq) > 1:
-            acq.pop()
-        acq = 'limit'.join(acq).strip() + ' limit 20'
+        stmt = QF_Statement(self.soql)
+        pcs = stmt.ph_comps()
+        if len(pcs) > 0:
+            self.auto_params(pcs)
+            stmt = QF_Statement(stmt.sql_sans_placeholders())
+        acq = stmt.apply_limit(20)
         rslt = self.make_result(acq)
         if not rslt:
             return False
@@ -122,32 +106,40 @@ class Query(models.Model):
     def apiqs(self, qs=None):
         if qs is None:
             qs = self.soql
+        if qs[:6] == 'query/':
+            return qs
         txt = '+'.join(qs.split(' '))
         return 'query?q=' + txt
 
-    def make_qs(self, qs=None, param_string=None):        
-        if qs is None:
-            qs = self.soql
-        if param_string is not None:
-            if 'WHERE' in qs:
-                temp_qs = qs.split('WHERE')
-                temp_wc = temp_qs.pop(-1)
-                temp_wc += ' AND ' + param_string
-                temp_qs.append(temp_wc)
-                qs = 'WHERE'.join(temp_qs)
+    def apply_params(self, sql=None, params={}):
+        sql = sql or self.soql
+        for key in params.keys():
+            param = params[key]
+            param_qs = self.parameter_set.filter(label=key)
+            if param_qs.count() != 0:
+                use_quotes = param_qs[0].apply_quotes
+                val_str = param['value']
+                if param['operator'] in ['IN', 'NOT IN']:
+                    val_str = "(%s)" % val_str
+                elif use_quotes:
+                    val_str = "'%s'" % val_str
+                param_str = "%s%s%s" % (
+                    param_qs[0].field_name,
+                    param['operator'],
+                    val_str)
+                nsql = sql.replace(param_qs[0].token_text, param_str)
+                sql = nsql
             else:
-                qs += ' WHERE ' + param_string
-        if self.api is None:
-            return qs
-        else:
-            return self.apiqs(qs)
+                fns = [x.field_name for x in self.parameter_set.all()]
+                print("can't find %s among %s." % (
+                    key,
+                    ", ".join(fns)))
+        return sql
 
-    def make_result(self, qs=None, param_string=None):        
-        if "?" in self.soql:
-            if qs is None:
-                return None
+    def make_result(self, qs=None, params={}):
+        qs = qs or self.soql
+        qs = self.apply_params(qs, params)
         rslt = None
-        qs = self.make_qs(qs, param_string)
         if self.api is None:
             # handle archive query
             if self.conn is None:
@@ -159,13 +151,15 @@ class Query(models.Model):
             rslt = json.loads(jrecs)
         else:
             # handle api call
+            qs = self.apiqs(qs)
+            print(qs)
             req = self.api.get_data(qs)
             if type(req) is dict:
                 if 'records' in req.keys():
                     rslt = req['records']
                     if not(req['done']):
                         nqs = req['nextRecordsUrl'][21:]
-                        rslt.append(self.sf_recs(nqs))
+                        rslt.append(self.make_result(nqs))
             else:
                 rslt = req
                 rslt.append({'qs': qs})
@@ -204,59 +198,10 @@ class DisplayColumn(models.Model):
         return self.label
 
 
-class ParameterGroup(models.Model):
-    OPERATION_CHOICES = (
-        ('AND', 'All'),
-        ('OR', 'Any'),
-    )
-    query = models.ForeignKey(
-        Query,
-        on_delete=models.CASCADE)
-    parent = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='nested_pg')
-    operation = models.CharField(
-        max_length=3,
-        choices=OPERATION_CHOICES,
-        default='AND')
-
-    def group_level(self):
-        level = 0
-        if self.parent is not None:
-            level = self.parent.group_level() + 1
-        return level
-
-    def __str__(self):
-        level_description = ''
-        level = self.group_level() + 1
-        if level > 3:
-            level_description = "%sth level" % level
-        elif level == 3:
-            level_description = "3rd level"
-        elif level == 2:
-            level_description = "2nd level"
-        elif level == 1:
-            level_description = "Main"
-        param_names = [str(x) for x in self.parameter_set.all()]
-        param_names = "(" + ",".join(param_names) + ")"
-        rtn = [
-            self.query.name,
-            level_description,
-            "Parameters",
-            param_names]
-        return " ".join(rtn)
-
-
 class Parameter(models.Model):
     query = models.ForeignKey(
         Query,
         on_delete=models.CASCADE)
-    parametergroup = models.ForeignKey(
-        ParameterGroup,
-        on_delete=models.CASCADE,
-        null=True)
     field_name = models.CharField(
         max_length=80)
     label = models.CharField(
@@ -265,6 +210,10 @@ class Parameter(models.Model):
         blank=True)
     apply_quotes = models.BooleanField(
         default=False)
+    token_text = models.CharField(
+        max_length=80,
+        null=True,
+        blank=True)
 
     def __str__(self):
         if self.label is None:
@@ -272,16 +221,39 @@ class Parameter(models.Model):
         else:
             return self.label
 
-    def set_parameter(self, operator, value):
-        rtn = [self.field_name, operator]
-        if operator in ['IN', 'NOT IN']:
-            if self.apply_quotes:
-                value = value.split(",")
-                value = "'%s'" % "','".join(value)
-            rtn.append("(%s)" % value)
-        else:
-            rtn.append(value)
-        return " ".join(rtn)
+    def make_token_text(self):
+        return self.token_text or ("%s=?" % self.field_name)
+
+    def token_in_sql(self):
+        tt = self.make_token_text()
+        rtn = tt in self.query.soql
+        if rtn and tt != self.token_text:
+            self.token_text = tt
+        return rtn
+
+    def append_param(self):
+        if not self.token_in_sql():
+            tt = self.make_token_text()
+            stmt = QF_Statement(self.query.soql)
+            nsql = str(stmt.append_comp(tt))
+            self.query.soql = nsql
+            self.query.parse_on_save = False
+            self.query.save()
+
+    def save(self, *args, **kwargs):
+        tt = self.make_token_text()
+        if self.token_text != tt:
+            self.token_text = tt
+        super(Parameter, self).save(*args, **kwargs)
+        self.append_param()
+
+    def delete(self, *args, **kwargs):
+        tt = self.make_token_text()
+        stmt = QF_Statement(self.query.soql)
+        self.query.soql = stmt.remove_ph_comp(tt)
+        self.query.parse_on_save = False
+        self.query.save()
+        super(Parameter, self).delete(keep_parents=True)
 
 
 class Report(models.Model):
@@ -291,15 +263,15 @@ class Report(models.Model):
     def __str__(self):
         return self.name
 
-    def result_union(self, param_string=None):
+    def result_union(self, params=None):
         rslt = []
         for rq in self.reportquery_set.all():
-            rqrslt = rq.query.make_result(None, param_string)
+            rqrslt = rq.query.make_result(rq.query.soql, params)
             rslt.extend(rqrslt)
         return rslt
 
-    def json_result(self, param_string=None):
-        jr = {'data': self.result_union(param_string)}
+    def json_result(self, params=None):
+        jr = {'data': self.result_union(params)}
         return json.dumps(jr)
 
     def display_rules(self):
@@ -313,7 +285,7 @@ class Report(models.Model):
         return pcount
 
     def params_required(self):
-        return self.parameter_count > 0
+        return self.parameter_count() > 0
 
     def report_params(self):
         params = []
@@ -340,3 +312,54 @@ class ReportQuery(models.Model):
     def rq_params(self):
         return self.query.parameter_set.all()
 
+
+class SavedReportParams(models.Model):
+    report = models.ForeignKey(
+        Report,
+        on_delete=models.CASCADE)
+    name = models.CharField(
+        max_length=80)
+    user_visible = models.BooleanField(
+        default=False)
+
+    def __str__(self):
+        return self.name
+
+    def make_queries(self):
+        sps = self.savedreportparam_set.all()
+        sqls = []
+        queries = [
+            rq.query for rq in self.report.reportquery_set.all()]
+        for query in queries:
+            sql = query.soql
+            to_insert = []
+            for sp in sps:
+                if sp.parameter in query.parameter_set.all():
+                    to_insert.append(sp.sql_fragment())
+                    sps.pop(sp)
+            if 'WHERE' in sql:
+                pass
+
+
+class SavedReportParam(models.Model):
+    saved_report = models.ForeignKey(
+        SavedReportParams,
+        on_delete=models.CASCADE)
+    parameter = models.ForeignKey(
+        Parameter,
+        on_delete=models.CASCADE)
+    operator = models.CharField(
+        max_length=20)
+    value = models.CharField(
+        max_length=255)
+
+    def sql_fragment(self):
+        frag = self.parameter.set_parameter(
+            self.operator,
+            self.value)
+        return frag
+
+    def __str__(self):
+        return "%s: %s" % (
+            self.saved_report.name,
+            self.sql_fragment())
